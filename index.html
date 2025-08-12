@@ -2609,12 +2609,8 @@
             onlinePlayerResults = [];
             onlineOpponentResults = [];
             
-            if (roomRef) {
-                roomRef.off();
-            }
-            if (playerRef) {
-                playerRef.off();
-            }
+            // Detener polling
+            stopRoomPolling();
             
             updateConnectionStatus(false);
         }
@@ -3548,6 +3544,32 @@
             console.log('========================');
         }
         
+        let roomPollingInterval;
+        
+        function startRoomPolling() {
+            // Limpiar intervalo anterior si existe
+            if (roomPollingInterval) {
+                clearInterval(roomPollingInterval);
+            }
+            
+            // Iniciar polling cada segundo
+            roomPollingInterval = setInterval(() => {
+                if (roomCode) {
+                    const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
+                    if (Object.keys(roomData).length > 0) {
+                        handleRoomUpdate({exists: () => true, val: () => roomData});
+                    }
+                }
+            }, 1000);
+        }
+        
+        function stopRoomPolling() {
+            if (roomPollingInterval) {
+                clearInterval(roomPollingInterval);
+                roomPollingInterval = null;
+            }
+        }
+        
         function createOnlineGame() {
             // Limpiar salas antiguas
             cleanOldRooms();
@@ -3555,10 +3577,6 @@
             roomCode = generateRoomCode();
             playerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             isHost = true;
-            
-            // Crear sala en simulación
-            roomRef = db.ref(`rooms/${roomCode}`);
-            playerRef = roomRef.child(`players/${playerId}`);
             
             const roomData = {
                 host: playerId,
@@ -3580,13 +3598,11 @@
             
             roomData.players[playerId] = playerData;
             
-            roomRef.set(roomData);
+            // Guardar directamente en localStorage
+            localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
             
             console.log('Sala creada:', roomCode);
             showAvailableRooms();
-            
-            // Escuchar cambios en la sala
-            roomRef.on('value', handleRoomUpdate);
             
             // Mostrar sala de espera
             hideAllPhases();
@@ -3594,6 +3610,9 @@
             document.getElementById('room-code-display').textContent = roomCode;
             
             updateConnectionStatus(true);
+            
+            // Iniciar polling para detectar cambios
+            startRoomPolling();
             
             // Simular que un jugador se une después de 3 segundos (para pruebas)
             setTimeout(() => {
@@ -3635,10 +3654,13 @@
             // Verificar si la sala existe
             const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
             
+            console.log('Intentando unirse a sala:', roomCode);
+            console.log('Datos de la sala:', roomData);
+            
             if (Object.keys(roomData).length > 0) {
                 console.log('Sala encontrada:', roomData);
                 
-                if (roomData.status === 'waiting' || roomData.gameState === 'waiting') {
+                if (roomData.gameState === 'waiting') {
                     // Verificar si ya hay 2 jugadores
                     const currentPlayers = roomData.players ? Object.keys(roomData.players).length : 0;
                     if (currentPlayers >= 2) {
@@ -3659,13 +3681,6 @@
                     roomData.players[playerId] = playerData;
                     localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
                     
-                    // Conectar a la sala
-                    roomRef = db.ref(`rooms/${roomCode}`);
-                    playerRef = roomRef.child(`players/${playerId}`);
-                    
-                    // Escuchar cambios
-                    roomRef.on('value', handleRoomUpdate);
-                    
                     // Mostrar sala de espera
                     hideAllPhases();
                     document.getElementById('waiting-room').classList.remove('hidden');
@@ -3673,13 +3688,19 @@
                     
                     updateConnectionStatus(true);
                     
+                    // Iniciar polling para detectar cambios
+                    startRoomPolling();
+                    
                     console.log('Jugador unido exitosamente a la sala:', roomCode);
+                    showAvailableRooms();
                 } else {
                     const gameState = roomData.gameState || roomData.status;
                     alert(`Esta sala ya está en juego (estado: ${gameState}) o ha finalizado.`);
                 }
             } else {
                 alert('Sala no encontrada. Verifica el código o pide al anfitrión que cree una nueva sala.');
+                console.log('Salas disponibles:');
+                showAvailableRooms();
             }
         }
         
@@ -3734,12 +3755,18 @@
         }
         
         function leaveOnlineGame() {
-            if (playerRef) {
-                playerRef.remove();
+            // Remover jugador de la sala
+            if (roomCode && playerId) {
+                const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
+                if (roomData.players && roomData.players[playerId]) {
+                    delete roomData.players[playerId];
+                    localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
+                }
             }
-            if (roomRef) {
-                roomRef.off();
-            }
+            
+            // Detener polling
+            stopRoomPolling();
+            
             resetOnlineGame();
             showMainMenu();
         }
