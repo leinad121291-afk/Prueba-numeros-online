@@ -3494,7 +3494,7 @@
             updateConnectionStatus(true);
         });
         
-        // Funciones para juego online
+        // Funciones para juego online - VERSIÓN SIMPLIFICADA Y FUNCIONAL
         function generateRoomCode() {
             const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
             let result = '';
@@ -3504,544 +3504,502 @@
             return result;
         }
         
-        function cleanOldRooms() {
-            const oneHourAgo = Date.now() - (60 * 60 * 1000);
-            
-            // Limpiar salas antiguas del localStorage
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith('firebase_rooms/')) {
-                    try {
-                        const roomData = JSON.parse(localStorage.getItem(key));
-                        if (roomData && roomData.createdAt && roomData.createdAt < oneHourAgo) {
-                            localStorage.removeItem(key);
-                        }
-                    } catch (e) {
-                        // Ignorar errores de parsing
-                    }
-                }
-            }
-        }
-        
-        function showAvailableRooms() {
-            console.log('=== SALAS DISPONIBLES ===');
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith('firebase_rooms/')) {
-                    try {
-                        const roomData = JSON.parse(localStorage.getItem(key));
-                        const roomCode = key.replace('firebase_rooms/', '');
-                        const playerCount = roomData.players ? Object.keys(roomData.players).length : 0;
-                        const gameState = roomData.gameState || roomData.status || 'unknown';
-                        const age = Math.round((Date.now() - roomData.createdAt) / 1000);
-                        
-                        console.log(`Sala: ${roomCode} | Estado: ${gameState} | Jugadores: ${playerCount}/2 | Edad: ${age}s`);
-                    } catch (e) {
-                        console.log(`Error al leer sala: ${key}`);
-                    }
-                }
-            }
-            console.log('========================');
-        }
-        
-        let roomPollingInterval;
-        
-        function startRoomPolling() {
-            // Limpiar intervalo anterior si existe
-            if (roomPollingInterval) {
-                clearInterval(roomPollingInterval);
-            }
-            
-            // Iniciar polling cada segundo
-            roomPollingInterval = setInterval(() => {
-                if (roomCode) {
-                    const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
-                    if (Object.keys(roomData).length > 0) {
-                        handleRoomUpdate({exists: () => true, val: () => roomData});
-                    }
-                }
-            }, 1000);
-        }
-        
-        function stopRoomPolling() {
-            if (roomPollingInterval) {
-                clearInterval(roomPollingInterval);
-                roomPollingInterval = null;
-            }
-        }
-        
         function createOnlineGame() {
-            // Limpiar salas antiguas
-            cleanOldRooms();
+            console.log('=== CREANDO SALA ONLINE ===');
             
+            // Generar código único
             roomCode = generateRoomCode();
-            playerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            playerId = 'host_' + Date.now();
             isHost = true;
+            isOnlineGame = true;
             
+            // Crear datos de la sala
             const roomData = {
-                host: playerId,
+                code: roomCode,
                 gameState: 'waiting',
                 createdAt: Date.now(),
-                config: null,
-                currentRound: 1,
-                totalRounds: 10,
-                players: {}
+                players: {
+                    [playerId]: {
+                        id: playerId,
+                        name: 'Anfitrión',
+                        ready: false,
+                        isHost: true
+                    }
+                }
             };
             
-            const playerData = {
-                id: playerId,
-                name: 'Anfitrión',
-                ready: false,
-                isHost: true,
-                joinedAt: Date.now()
-            };
-            
-            roomData.players[playerId] = playerData;
-            
-            // Guardar directamente en localStorage
-            localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
+            // Guardar en localStorage
+            localStorage.setItem('room_' + roomCode, JSON.stringify(roomData));
             
             console.log('Sala creada:', roomCode);
-            showAvailableRooms();
+            console.log('Datos guardados:', roomData);
             
             // Mostrar sala de espera
             hideAllPhases();
             document.getElementById('waiting-room').classList.remove('hidden');
             document.getElementById('room-code-display').textContent = roomCode;
             
-            updateConnectionStatus(true);
-            
-            // Iniciar polling para detectar cambios
+            // Iniciar polling
             startRoomPolling();
             
-            // Simular que un jugador se une después de 3 segundos (para pruebas)
+            // Simular invitado después de 2 segundos
             setTimeout(() => {
-                if (isHost && roomCode) {
-                    const guestId = 'guest_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                    const guestData = {
-                        id: guestId,
-                        name: 'Invitado',
-                        ready: false,
-                        isHost: false,
-                        joinedAt: Date.now()
-                    };
-                    
-                    const currentRoomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
-                    currentRoomData.players = currentRoomData.players || {};
-                    currentRoomData.players[guestId] = guestData;
-                    localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(currentRoomData));
-                    
-                    opponentId = guestId;
-                    updateWaitingRoom(currentRoomData);
-                }
-            }, 3000);
+                simulateGuestJoin();
+            }, 2000);
         }
         
         function joinOnlineGame() {
+            console.log('=== UNIÉNDOSE A SALA ONLINE ===');
+            
             const inputCode = document.getElementById('room-code-input').value.trim().toUpperCase();
             if (!inputCode || inputCode.length !== 6) {
                 alert('Por favor, ingresa un código válido de 6 caracteres.');
                 return;
             }
             
-            // Limpiar salas antiguas (más de 1 hora)
-            cleanOldRooms();
-            
             roomCode = inputCode;
-            playerId = 'guest_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            playerId = 'guest_' + Date.now();
             isHost = false;
+            isOnlineGame = true;
             
-            // Verificar si la sala existe
-            const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
+            // Buscar la sala
+            const roomData = JSON.parse(localStorage.getItem('room_' + roomCode) || 'null');
             
-            console.log('Intentando unirse a sala:', roomCode);
-            console.log('Datos de la sala:', roomData);
+            console.log('Código ingresado:', roomCode);
+            console.log('Datos de sala encontrados:', roomData);
             
-            if (Object.keys(roomData).length > 0) {
-                console.log('Sala encontrada:', roomData);
+            if (roomData && roomData.gameState === 'waiting') {
+                // Agregar jugador a la sala
+                roomData.players[playerId] = {
+                    id: playerId,
+                    name: 'Invitado',
+                    ready: false,
+                    isHost: false
+                };
                 
-                if (roomData.gameState === 'waiting') {
-                    // Verificar si ya hay 2 jugadores
-                    const currentPlayers = roomData.players ? Object.keys(roomData.players).length : 0;
-                    if (currentPlayers >= 2) {
-                        alert('Esta sala ya está llena. Solo se permiten 2 jugadores por sala.');
-                        return;
-                    }
-                    
-                    // Unirse a la sala
-                    const playerData = {
-                        id: playerId,
-                        name: 'Invitado',
-                        ready: false,
-                        isHost: false,
-                        joinedAt: Date.now()
-                    };
-                    
-                    roomData.players = roomData.players || {};
-                    roomData.players[playerId] = playerData;
-                    localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
-                    
-                    // Mostrar sala de espera
-                    hideAllPhases();
-                    document.getElementById('waiting-room').classList.remove('hidden');
-                    document.getElementById('room-code-display').textContent = roomCode;
-                    
-                    updateConnectionStatus(true);
-                    
-                    // Iniciar polling para detectar cambios
-                    startRoomPolling();
-                    
-                    console.log('Jugador unido exitosamente a la sala:', roomCode);
-                    showAvailableRooms();
-                } else {
-                    const gameState = roomData.gameState || roomData.status;
-                    alert(`Esta sala ya está en juego (estado: ${gameState}) o ha finalizado.`);
-                }
+                // Actualizar localStorage
+                localStorage.setItem('room_' + roomCode, JSON.stringify(roomData));
+                
+                console.log('Jugador agregado a la sala');
+                console.log('Sala actualizada:', roomData);
+                
+                // Mostrar sala de espera
+                hideAllPhases();
+                document.getElementById('waiting-room').classList.remove('hidden');
+                document.getElementById('room-code-display').textContent = roomCode;
+                
+                // Iniciar polling
+                startRoomPolling();
+                
             } else {
-                alert('Sala no encontrada. Verifica el código o pide al anfitrión que cree una nueva sala.');
-                console.log('Salas disponibles:');
-                showAvailableRooms();
+                alert('Sala no encontrada o no disponible. Verifica el código.');
+                console.log('Sala no encontrada para código:', roomCode);
             }
         }
         
-        function handleRoomUpdate(snapshot) {
-            if (!snapshot.exists()) return;
+        function simulateGuestJoin() {
+            if (!isHost || !roomCode) return;
             
-            const roomData = snapshot.val();
-            onlineGameState = roomData.gameState;
-            onlineConfig = roomData.config;
-            onlineCurrentRound = roomData.currentRound || 1;
-            onlineTotalRounds = roomData.totalRounds || 10;
+            console.log('=== SIMULANDO INVITADO ===');
             
-            // Actualizar estado según la fase del juego
-            switch (onlineGameState) {
-                case 'waiting':
-                    updateWaitingRoom(roomData);
-                    break;
-                case 'setup':
-                    showOnlineSetupPhase();
-                    break;
-                case 'memorizing':
-                    showOnlineMemorizationPhase();
-                    break;
-                case 'writing':
-                    showOnlineWritingPhase();
-                    break;
-                case 'results':
-                    showOnlineResultsPhase();
-                    break;
-                case 'finished':
-                    showOnlineFinalResults();
-                    break;
+            const guestId = 'guest_' + Date.now();
+            const roomData = JSON.parse(localStorage.getItem('room_' + roomCode));
+            
+            if (roomData) {
+                roomData.players[guestId] = {
+                    id: guestId,
+                    name: 'Invitado Simulado',
+                    ready: false,
+                    isHost: false
+                };
+                
+                localStorage.setItem('room_' + roomCode, JSON.stringify(roomData));
+                opponentId = guestId;
+                
+                console.log('Invitado simulado agregado:', guestId);
+                updateWaitingRoom(roomData);
             }
+        }
+        
+        function startRoomPolling() {
+            console.log('Iniciando polling para sala:', roomCode);
+            
+            if (roomPollingInterval) {
+                clearInterval(roomPollingInterval);
+            }
+            
+            roomPollingInterval = setInterval(() => {
+                if (roomCode) {
+                    const roomData = JSON.parse(localStorage.getItem('room_' + roomCode) || 'null');
+                    if (roomData) {
+                        updateWaitingRoom(roomData);
+                        
+                        // Si ambos jugadores están listos, iniciar juego
+                        const players = Object.values(roomData.players);
+                        const allReady = players.length === 2 && players.every(p => p.ready);
+                        
+                        if (allReady && roomData.gameState === 'waiting') {
+                            console.log('Ambos jugadores listos, iniciando juego...');
+                            startOnlineGame();
+                        }
+                    }
+                }
+            }, 1000);
         }
         
         function updateWaitingRoom(roomData) {
-            if (roomData && roomData.players) {
-                const players = Object.values(roomData.players);
-                const host = players.find(p => p.isHost);
-                const guest = players.find(p => !p.isHost);
+            if (!roomData || !roomData.players) return;
+            
+            const players = Object.values(roomData.players);
+            const host = players.find(p => p.isHost);
+            const guest = players.find(p => !p.isHost);
+            
+            console.log('Actualizando sala de espera:', {host, guest});
+            
+            if (host) {
+                document.getElementById('host-name').textContent = host.name;
+                document.getElementById('host-status').textContent = host.ready ? '✅ Listo' : '⏳ Configurando...';
+            }
+            
+            if (guest) {
+                document.getElementById('guest-name').textContent = guest.name;
+                document.getElementById('guest-status').textContent = guest.ready ? '✅ Listo' : '⏳ Esperando...';
+            }
+        }
+        
+        function setPlayerReady() {
+            console.log('Jugador marcado como listo:', playerId);
+            
+            const roomData = JSON.parse(localStorage.getItem('room_' + roomCode));
+            if (roomData && roomData.players[playerId]) {
+                roomData.players[playerId].ready = true;
+                localStorage.setItem('room_' + roomCode, JSON.stringify(roomData));
                 
-                if (host) {
-                    document.getElementById('host-name').textContent = host.name;
-                    document.getElementById('host-status').textContent = host.ready ? '✅ Listo' : '⏳ Configurando...';
+                document.getElementById('online-ready-btn').disabled = true;
+                document.getElementById('online-ready-btn').textContent = '✅ Listo';
+                
+                console.log('Estado actualizado:', roomData);
+            }
+        }
+        
+        function startOnlineGame() {
+            console.log('=== INICIANDO JUEGO ONLINE ===');
+            
+            const roomData = JSON.parse(localStorage.getItem('room_' + roomCode));
+            if (roomData) {
+                roomData.gameState = 'memorizing';
+                roomData.currentRound = 1;
+                roomData.config = {
+                    digits: 5,
+                    rounds: 3,
+                    memorizationTime: 15,
+                    recallTime: 30
+                };
+                
+                // Generar secuencia de números
+                roomData.numberSequence = [];
+                for (let i = 0; i < roomData.config.digits; i++) {
+                    const number = Math.floor(Math.random() * 100);
+                    roomData.numberSequence.push(number.toString().padStart(2, '0'));
                 }
                 
-                if (guest) {
-                    document.getElementById('guest-name').textContent = guest.name;
-                    document.getElementById('guest-status').textContent = guest.ready ? '✅ Listo' : '⏳ Esperando...';
-                }
+                localStorage.setItem('room_' + roomCode, JSON.stringify(roomData));
+                
+                console.log('Juego iniciado con configuración:', roomData.config);
+                console.log('Secuencia generada:', roomData.numberSequence);
+                
+                showOnlineMemorizationPhase();
             }
         }
         
         function leaveOnlineGame() {
-            // Remover jugador de la sala
+            console.log('Saliendo del juego online');
+            
             if (roomCode && playerId) {
-                const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
-                if (roomData.players && roomData.players[playerId]) {
+                const roomData = JSON.parse(localStorage.getItem('room_' + roomCode) || 'null');
+                if (roomData && roomData.players[playerId]) {
                     delete roomData.players[playerId];
-                    localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
+                    localStorage.setItem('room_' + roomCode, JSON.stringify(roomData));
                 }
             }
             
-            // Detener polling
-            stopRoomPolling();
+            if (roomPollingInterval) {
+                clearInterval(roomPollingInterval);
+                roomPollingInterval = null;
+            }
             
             resetOnlineGame();
             showMainMenu();
         }
         
-        function setPlayerReady() {
-            onlinePlayerReady = true;
-            
-            // Actualizar estado del jugador en la sala
-            const currentRoomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
-            if (currentRoomData.players && currentRoomData.players[playerId]) {
-                currentRoomData.players[playerId].ready = true;
-                localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(currentRoomData));
-            }
-            
-            document.getElementById('online-ready-btn').disabled = true;
-            document.getElementById('online-ready-btn').textContent = '✅ Listo';
-            
-            // Simular que el oponente también se pone listo después de 2 segundos
-            setTimeout(() => {
-                if (roomCode && opponentId) {
-                    const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
-                    if (roomData.players && roomData.players[opponentId]) {
-                        roomData.players[opponentId].ready = true;
-                        roomData.gameState = 'setup';
-                        localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
-                        
-                        // Iniciar el juego
-                        startOnlineGame();
-                    }
-                }
-            }, 2000);
-        }
-        
-        function startOnlineGame() {
-            // Configurar el juego online con valores por defecto
-            onlineConfig = {
-                digits: 5,
-                rounds: 3,
-                memorizationTime: 15,
-                recallTime: 30,
-                displayMode: 'pairs'
-            };
-            
-            // Generar secuencia de números
-            generateOnlineNumberSequence();
-            
-            // Actualizar estado de la sala
-            const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
-            roomData.config = onlineConfig;
-            roomData.gameState = 'memorizing';
-            roomData.currentRound = 1;
-            localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
-            
-            showOnlineMemorizationPhase();
-        }
-        
-        function showOnlineSetupPhase() {
-            hideAllPhases();
-            document.getElementById('online-setup-phase').classList.remove('hidden');
-            
-            // Mostrar configuración
-            if (onlineConfig) {
-                displayOnlineConfig();
-            }
-            
-            // Actualizar estado de jugadores
-            updateOnlinePlayerStatus();
-            
-            // Habilitar botón de listo
-            document.getElementById('online-ready-btn').disabled = false;
-        }
-        
-        function displayOnlineConfig() {
-            if (!onlineConfig) return;
-            
-            const configDiv = document.getElementById('online-config-details');
-            configDiv.innerHTML = `
-                <p><strong>Números:</strong> ${onlineConfig.digits}</p>
-                <p><strong>Rondas:</strong> ${onlineConfig.rounds}</p>
-                <p><strong>Tiempo de memorización:</strong> ${onlineConfig.memorizationTime}s</p>
-                <p><strong>Tiempo de recall:</strong> ${onlineConfig.recallTime}s</p>
-                <p><strong>Modo:</strong> ${onlineConfig.displayMode === 'pairs' ? 'Parejas' : 'Individual'}</p>
-            `;
-        }
-        
-        function updateOnlinePlayerStatus() {
-            // Esta función se implementará para mostrar el estado de los jugadores
-        }
-        
-        function generateOnlineNumberSequence() {
+        function resetOnlineGame() {
+            isOnlineGame = false;
+            roomCode = '';
+            playerId = '';
+            isHost = false;
+            opponentId = '';
+            onlineGameState = 'waiting';
+            onlineConfig = null;
             onlineNumberSequence = [];
+            onlineCurrentNumberIndex = 0;
+            onlineTimer = 0;
+            onlinePlayerReady = false;
+            onlineOpponentReady = false;
+            onlinePlayerResults = [];
+            onlineOpponentResults = [];
             
-            // Generar secuencia aleatoria de números del 00-99
-            for (let i = 0; i < onlineConfig.digits; i++) {
-                const number = Math.floor(Math.random() * 100);
-                onlineNumberSequence.push(number.toString().padStart(2, '0'));
+            if (roomPollingInterval) {
+                clearInterval(roomPollingInterval);
+                roomPollingInterval = null;
             }
             
-            // Guardar la secuencia en la sala para que ambos jugadores la usen
-            const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
-            roomData.numberSequence = onlineNumberSequence;
-            localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
-        }
-        
-        function showOnlineMemorizationPhase() {
-            hideAllPhases();
-            document.getElementById('online-memorization-phase').classList.remove('hidden');
-            
-            // Obtener la secuencia de números de la sala
-            const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
-            if (roomData.numberSequence) {
-                onlineNumberSequence = roomData.numberSequence;
-            }
-            
-            // Actualizar información de la ronda
-            document.getElementById('online-current-round').textContent = onlineCurrentRound;
-            document.getElementById('online-mem-room-code').textContent = roomCode;
-            
-            // Mostrar los números
-            updateOnlineDisplay();
-            
-            // Iniciar temporizador
-            startOnlineMemorizationTimer();
-        }
-        
-        function updateOnlineDisplay() {
-            const display = document.getElementById('online-number-display');
-            const progress = document.getElementById('online-progress');
-            const prevBtn = document.getElementById('online-prev-btn');
-            const nextBtn = document.getElementById('online-next-btn');
-            const pageInfo = document.getElementById('online-page-info');
-            
-            if (onlineNumberSequence.length === 0) {
-                display.textContent = 'No hay números para mostrar';
-                return;
-            }
-            
-            let numbersToShow = [];
-            let numbersInThisPage = 0;
-            
-            if (onlineConfig.displayMode === 'pairs') {
-                // Modo parejas: mostrar 2 números por página
-                if (onlineCurrentNumberIndex + 2 >= onlineNumberSequence.length && onlineNumberSequence.length % 2 === 1) {
-                    numbersInThisPage = 1;
-                } else {
-                    numbersInThisPage = 2;
-                }
-                
-                for (let i = 0; i < numbersInThisPage && onlineCurrentNumberIndex + i < onlineNumberSequence.length; i++) {
-                    numbersToShow.push(onlineNumberSequence[onlineCurrentNumberIndex + i]);
-                }
-                
-                display.textContent = numbersToShow.join(' ');
-            } else {
-                // Modo individual: mostrar 1 número por página
-                numbersInThisPage = 1;
-                numbersToShow.push(onlineNumberSequence[onlineCurrentNumberIndex]);
-                display.textContent = numbersToShow[0];
-            }
-            
-            const totalPages = onlineConfig.displayMode === 'pairs' ? 
-                Math.ceil(onlineNumberSequence.length / 2) : onlineNumberSequence.length;
-            const currentPage = onlineConfig.displayMode === 'pairs' ? 
-                Math.floor(onlineCurrentNumberIndex / 2) + 1 : onlineCurrentNumberIndex + 1;
-            
-            progress.textContent = `Número ${onlineCurrentNumberIndex + 1}-${onlineCurrentNumberIndex + numbersInThisPage} de ${onlineNumberSequence.length}`;
-            pageInfo.textContent = `Página ${currentPage} de ${totalPages}`;
-            
-            const prevShouldBeDisabled = onlineCurrentNumberIndex === 0;
-            const nextShouldBeDisabled = onlineCurrentNumberIndex + numbersInThisPage >= onlineNumberSequence.length;
-            
-            prevBtn.disabled = prevShouldBeDisabled;
-            nextBtn.disabled = nextShouldBeDisabled;
-        }
-        
-        function startOnlineMemorizationTimer() {
-            onlineTimer = onlineConfig.memorizationTime;
-            onlineMemorizationStartTime = Date.now();
-            
-            document.getElementById('online-timer').textContent = `Tiempo restante: ${onlineTimer.toFixed(1)} segundos`;
-            
-            onlineTimerInterval = setInterval(() => {
-                onlineTimer -= 0.1;
-                const elapsedTime = ((Date.now() - onlineMemorizationStartTime) / 1000).toFixed(1);
-                document.getElementById('online-timer').textContent = `Tiempo restante: ${onlineTimer.toFixed(1)} segundos`;
-                document.getElementById('online-elapsed-time').textContent = `Tiempo empleado: ${elapsedTime} segundos`;
-                
-                if (onlineTimer <= 0) {
-                    clearInterval(onlineTimerInterval);
-                    finishOnlineMemorization();
-                }
-            }, 100);
-        }
-        
-        function finishOnlineMemorization() {
-            clearInterval(onlineTimerInterval);
-            
-            // Calcular tiempo real de memorización
-            onlineActualMemorizationTime = ((Date.now() - onlineMemorizationStartTime) / 1000).toFixed(1);
-            
-            // Cambiar a fase de escritura
-            const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
-            roomData.gameState = 'writing';
-            localStorage.setItem('firebase_rooms/' + roomCode, JSON.stringify(roomData));
-            
-            showOnlineWritingPhase();
-        }
-        
-        // Funciones auxiliares para navegación online
-        function onlinePreviousNumber() {
-            if (onlineCurrentNumberIndex > 0) {
-                onlineCurrentNumberIndex = onlineConfig.displayMode === 'pairs' ? 
-                    Math.max(0, onlineCurrentNumberIndex - 2) : onlineCurrentNumberIndex - 1;
-                updateOnlineDisplay();
-            }
-        }
-        
-        function onlineNextNumber() {
-            const increment = onlineConfig.displayMode === 'pairs' ? 2 : 1;
-            if (onlineCurrentNumberIndex + increment < onlineNumberSequence.length) {
-                onlineCurrentNumberIndex += increment;
-                updateOnlineDisplay();
-            }
-        }
-        
-        function showOnlineWritingPhase() {
-            hideAllPhases();
-            document.getElementById('online-input-phase').classList.remove('hidden');
-            
-            // Generar grid de inputs
-            generateOnlineDigitsGrid();
-            
-            // Iniciar temporizador de recall
-            startOnlineRecallTimer();
-        }
-        
-        function generateOnlineDigitsGrid() {
-            // Implementar grid de inputs para online
-        }
-        
-        function startOnlineRecallTimer() {
-            // Implementar temporizador de recall online
-        }
-        
-        function showOnlineResultsPhase() {
-            hideAllPhases();
-            document.getElementById('online-result-phase').classList.remove('hidden');
-            
-            // Mostrar resultados comparativos
-            displayOnlineResults();
-        }
-        
-        function displayOnlineResults() {
-            // Implementar visualización de resultados online
-        }
-        
-        function showOnlineFinalResults() {
-            hideAllPhases();
-            document.getElementById('online-final-results-phase').classList.remove('hidden');
-            
-            // Mostrar resultados finales
-            displayOnlineFinalResults();
-        }
-        
-        function displayOnlineFinalResults() {
-            // Implementar visualización de resultados finales online
-        }
-        
-        function onlineCheckAnswer() {
-            // Implementar verificación de respuesta para online
-        }
-        
-        function onlineNextRound() {
-            // Implementar siguiente ronda para online
-        }
-    </script>
+                         updateConnectionStatus(false);
+         }
+         
+         function showOnlineMemorizationPhase() {
+             console.log('=== MOSTRANDO FASE DE MEMORIZACIÓN ONLINE ===');
+             
+             hideAllPhases();
+             document.getElementById('online-memorization-phase').classList.remove('hidden');
+             
+             // Obtener datos de la sala
+             const roomData = JSON.parse(localStorage.getItem('room_' + roomCode));
+             if (roomData && roomData.numberSequence) {
+                 onlineNumberSequence = roomData.numberSequence;
+                 onlineConfig = roomData.config;
+                 onlineCurrentRound = roomData.currentRound;
+                 
+                 // Actualizar información en la pantalla
+                 document.getElementById('online-current-round').textContent = onlineCurrentRound;
+                 document.getElementById('online-mem-room-code').textContent = roomCode;
+                 
+                 // Mostrar números
+                 updateOnlineDisplay();
+                 
+                 // Iniciar temporizador
+                 startOnlineMemorizationTimer();
+             }
+         }
+         
+         function updateOnlineDisplay() {
+             const display = document.getElementById('online-number-display');
+             const progress = document.getElementById('online-progress');
+             
+             if (onlineNumberSequence.length === 0) {
+                 display.textContent = 'No hay números para mostrar';
+                 return;
+             }
+             
+             // Mostrar números en parejas
+             let displayText = '';
+             for (let i = 0; i < onlineNumberSequence.length; i += 2) {
+                 if (i > 0) displayText += ' ';
+                 displayText += onlineNumberSequence[i];
+                 if (i + 1 < onlineNumberSequence.length) {
+                     displayText += ' ' + onlineNumberSequence[i + 1];
+                 }
+             }
+             
+             display.textContent = displayText;
+             progress.textContent = `Números 1-${onlineNumberSequence.length} de ${onlineNumberSequence.length}`;
+         }
+         
+         function startOnlineMemorizationTimer() {
+             onlineTimer = onlineConfig.memorizationTime;
+             onlineMemorizationStartTime = Date.now();
+             
+             document.getElementById('online-timer').textContent = `Tiempo restante: ${onlineTimer.toFixed(1)} segundos`;
+             
+             onlineTimerInterval = setInterval(() => {
+                 onlineTimer -= 0.1;
+                 const elapsedTime = ((Date.now() - onlineMemorizationStartTime) / 1000).toFixed(1);
+                 document.getElementById('online-timer').textContent = `Tiempo restante: ${onlineTimer.toFixed(1)} segundos`;
+                 document.getElementById('online-elapsed-time').textContent = `Tiempo empleado: ${elapsedTime} segundos`;
+                 
+                 if (onlineTimer <= 0) {
+                     clearInterval(onlineTimerInterval);
+                     finishOnlineMemorization();
+                 }
+             }, 100);
+         }
+         
+         function finishOnlineMemorization() {
+             clearInterval(onlineTimerInterval);
+             
+             // Calcular tiempo real de memorización
+             onlineActualMemorizationTime = ((Date.now() - onlineMemorizationStartTime) / 1000).toFixed(1);
+             
+             console.log('Memorización completada en:', onlineActualMemorizationTime, 'segundos');
+             
+             // Cambiar a fase de escritura
+             const roomData = JSON.parse(localStorage.getItem('room_' + roomCode));
+             if (roomData) {
+                 roomData.gameState = 'writing';
+                 localStorage.setItem('room_' + roomCode, JSON.stringify(roomData));
+                 
+                 showOnlineWritingPhase();
+             }
+         }
+         
+         function showOnlineWritingPhase() {
+             console.log('=== MOSTRANDO FASE DE ESCRITURA ONLINE ===');
+             
+             hideAllPhases();
+             document.getElementById('online-input-phase').classList.remove('hidden');
+             
+             // Actualizar información
+             document.getElementById('online-input-round').textContent = onlineCurrentRound;
+             document.getElementById('online-input-room-code').textContent = roomCode;
+             
+             // Generar grid de inputs
+             generateOnlineDigitsGrid();
+             
+             // Iniciar temporizador de recall
+             startOnlineRecallTimer();
+         }
+         
+         function generateOnlineDigitsGrid() {
+             const container = document.getElementById('online-digits-input-container');
+             container.innerHTML = '';
+             
+             for (let i = 0; i < onlineNumberSequence.length; i++) {
+                 const input = document.createElement('input');
+                 input.type = 'text';
+                 input.className = 'digits-input';
+                 input.id = 'online-digit-' + i;
+                 input.maxLength = 2;
+                 input.placeholder = '00';
+                 
+                 container.appendChild(input);
+             }
+         }
+         
+         function startOnlineRecallTimer() {
+             onlineTimer = onlineConfig.recallTime;
+             
+             document.getElementById('online-recall-timer-display').textContent = `Tiempo restante: ${onlineTimer.toFixed(1)} segundos`;
+             
+             onlineRecallTimerInterval = setInterval(() => {
+                 onlineTimer -= 0.1;
+                 document.getElementById('online-recall-timer-display').textContent = `Tiempo restante: ${onlineTimer.toFixed(1)} segundos`;
+                 
+                 if (onlineTimer <= 0) {
+                     clearInterval(onlineRecallTimerInterval);
+                     onlineCheckAnswer();
+                 }
+             }, 100);
+         }
+         
+         function onlineCheckAnswer() {
+             clearInterval(onlineRecallTimerInterval);
+             
+             // Recopilar respuestas del usuario
+             const userAnswers = [];
+             for (let i = 0; i < onlineNumberSequence.length; i++) {
+                 const input = document.getElementById('online-digit-' + i);
+                 userAnswers.push(input.value.padStart(2, '0'));
+             }
+             
+             // Calcular precisión
+             let correct = 0;
+             for (let i = 0; i < onlineNumberSequence.length; i++) {
+                 if (userAnswers[i] === onlineNumberSequence[i]) {
+                     correct++;
+                 }
+             }
+             
+             const accuracy = Math.round((correct / onlineNumberSequence.length) * 100);
+             
+             console.log('Respuestas del usuario:', userAnswers);
+             console.log('Secuencia correcta:', onlineNumberSequence);
+             console.log('Precisión:', accuracy + '%');
+             
+             // Guardar resultado
+             const roomData = JSON.parse(localStorage.getItem('room_' + roomCode));
+             if (roomData) {
+                 roomData.gameState = 'results';
+                 roomData.playerResults = roomData.playerResults || {};
+                 roomData.playerResults[playerId] = {
+                     accuracy: accuracy,
+                     time: onlineActualMemorizationTime,
+                     answers: userAnswers
+                 };
+                 
+                 localStorage.setItem('room_' + roomCode, JSON.stringify(roomData));
+                 
+                 showOnlineResultsPhase();
+             }
+         }
+         
+         function showOnlineResultsPhase() {
+             console.log('=== MOSTRANDO RESULTADOS ONLINE ===');
+             
+             hideAllPhases();
+             document.getElementById('online-result-phase').classList.remove('hidden');
+             
+             // Actualizar información
+             document.getElementById('online-result-round').textContent = onlineCurrentRound;
+             document.getElementById('online-result-room-code').textContent = roomCode;
+             
+             // Mostrar resultados
+             displayOnlineResults();
+         }
+         
+         function displayOnlineResults() {
+             const roomData = JSON.parse(localStorage.getItem('room_' + roomCode));
+             if (!roomData || !roomData.playerResults) return;
+             
+             const results = roomData.playerResults;
+             const players = Object.keys(results);
+             
+             if (players.length >= 1) {
+                 const player1Result = results[players[0]];
+                 document.getElementById('player1-accuracy').textContent = player1Result.accuracy + '%';
+                 document.getElementById('player1-time').textContent = player1Result.time + 's';
+                 document.getElementById('player1-status').textContent = 'Completado';
+             }
+             
+             if (players.length >= 2) {
+                 const player2Result = results[players[1]];
+                 document.getElementById('player2-accuracy').textContent = player2Result.accuracy + '%';
+                 document.getElementById('player2-time').textContent = player2Result.time + 's';
+                 document.getElementById('player2-status').textContent = 'Completado';
+             }
+             
+             // Mostrar comparación
+             const comparisonGrid = document.getElementById('online-comparison-grid');
+             comparisonGrid.innerHTML = '<h4>Comparación de Números</h4>';
+             
+             if (players.length >= 2) {
+                 const player1Answers = results[players[0]].answers;
+                 const player2Answers = results[players[1]].answers;
+                 
+                 for (let i = 0; i < onlineNumberSequence.length; i++) {
+                     const correct = onlineNumberSequence[i];
+                     const p1Answer = player1Answers[i] || '--';
+                     const p2Answer = player2Answers[i] || '--';
+                     
+                     const row = document.createElement('div');
+                     row.style.display = 'flex';
+                     row.style.justifyContent = 'space-around';
+                     row.style.margin = '5px 0';
+                     row.style.padding = '5px';
+                     row.style.backgroundColor = '#f8f9fa';
+                     row.style.borderRadius = '5px';
+                     
+                     row.innerHTML = `
+                         <span><strong>Número ${i+1}:</strong> ${correct}</span>
+                         <span>Jugador 1: ${p1Answer}</span>
+                         <span>Jugador 2: ${p2Answer}</span>
+                     `;
+                     
+                     comparisonGrid.appendChild(row);
+                 }
+             }
+         }
+         
+         // Variables globales para el sistema online
+         let roomPollingInterval;
+     </script>
 </body>
 </html> 
