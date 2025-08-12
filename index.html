@@ -3508,7 +3508,50 @@
             return result;
         }
         
+        function cleanOldRooms() {
+            const oneHourAgo = Date.now() - (60 * 60 * 1000);
+            
+            // Limpiar salas antiguas del localStorage
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('firebase_rooms/')) {
+                    try {
+                        const roomData = JSON.parse(localStorage.getItem(key));
+                        if (roomData && roomData.createdAt && roomData.createdAt < oneHourAgo) {
+                            localStorage.removeItem(key);
+                        }
+                    } catch (e) {
+                        // Ignorar errores de parsing
+                    }
+                }
+            }
+        }
+        
+        function showAvailableRooms() {
+            console.log('=== SALAS DISPONIBLES ===');
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('firebase_rooms/')) {
+                    try {
+                        const roomData = JSON.parse(localStorage.getItem(key));
+                        const roomCode = key.replace('firebase_rooms/', '');
+                        const playerCount = roomData.players ? Object.keys(roomData.players).length : 0;
+                        const gameState = roomData.gameState || roomData.status || 'unknown';
+                        const age = Math.round((Date.now() - roomData.createdAt) / 1000);
+                        
+                        console.log(`Sala: ${roomCode} | Estado: ${gameState} | Jugadores: ${playerCount}/2 | Edad: ${age}s`);
+                    } catch (e) {
+                        console.log(`Error al leer sala: ${key}`);
+                    }
+                }
+            }
+            console.log('========================');
+        }
+        
         function createOnlineGame() {
+            // Limpiar salas antiguas
+            cleanOldRooms();
+            
             roomCode = generateRoomCode();
             playerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             isHost = true;
@@ -3519,12 +3562,11 @@
             
             const roomData = {
                 host: playerId,
-                status: 'waiting',
+                gameState: 'waiting',
                 createdAt: Date.now(),
                 config: null,
                 currentRound: 1,
                 totalRounds: 10,
-                gameState: 'waiting',
                 players: {}
             };
             
@@ -3539,6 +3581,9 @@
             roomData.players[playerId] = playerData;
             
             roomRef.set(roomData);
+            
+            console.log('Sala creada:', roomCode);
+            showAvailableRooms();
             
             // Escuchar cambios en la sala
             roomRef.on('value', handleRoomUpdate);
@@ -3580,6 +3625,9 @@
                 return;
             }
             
+            // Limpiar salas antiguas (más de 1 hora)
+            cleanOldRooms();
+            
             roomCode = inputCode;
             playerId = 'guest_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             isHost = false;
@@ -3588,7 +3636,16 @@
             const roomData = JSON.parse(localStorage.getItem('firebase_rooms/' + roomCode) || '{}');
             
             if (Object.keys(roomData).length > 0) {
-                if (roomData.status === 'waiting') {
+                console.log('Sala encontrada:', roomData);
+                
+                if (roomData.status === 'waiting' || roomData.gameState === 'waiting') {
+                    // Verificar si ya hay 2 jugadores
+                    const currentPlayers = roomData.players ? Object.keys(roomData.players).length : 0;
+                    if (currentPlayers >= 2) {
+                        alert('Esta sala ya está llena. Solo se permiten 2 jugadores por sala.');
+                        return;
+                    }
+                    
                     // Unirse a la sala
                     const playerData = {
                         id: playerId,
@@ -3615,11 +3672,14 @@
                     document.getElementById('room-code-display').textContent = roomCode;
                     
                     updateConnectionStatus(true);
+                    
+                    console.log('Jugador unido exitosamente a la sala:', roomCode);
                 } else {
-                    alert('Esta sala ya está en juego o ha finalizado.');
+                    const gameState = roomData.gameState || roomData.status;
+                    alert(`Esta sala ya está en juego (estado: ${gameState}) o ha finalizado.`);
                 }
             } else {
-                alert('Sala no encontrada. Verifica el código.');
+                alert('Sala no encontrada. Verifica el código o pide al anfitrión que cree una nueva sala.');
             }
         }
         
